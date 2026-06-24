@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parse JSON Schema Checker</title>
+<style>
+  :root{
+    --bg:#0B0E14;
+    --panel:#11151F;
+    --panel-2:#0E121B;
+    --line:#1E2433;
+    --line-soft:#171C28;
+    --text:#E6E9EF;
+    --text-dim:#7A8499;
+    --text-faint:#4D5468;
+    --accent:#5B8AF5;
+    --accent-dim:#2E3F66;
+    --error:#F0584B;
+    --error-bg:#2A1414;
+    --error-dim:#5C2A26;
+    --pass:#3DD68C;
+    --pass-bg:#0F2A20;
+    --warn:#E0A23D;
+    --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+    --ui:'Inter',-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--ui);height:100%;}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+
+  /* ---- header ---- */
+  header{
+    padding:14px 22px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    flex-shrink:0;
+    background:linear-gradient(180deg, #0D111A, #0B0E14);
+  }
+  header h1{
+    font-size:14px;
+    font-weight:600;
+    letter-spacing:0.02em;
+    margin:0;
+    color:var(--text);
+  }
+  header h1 .dim{color:var(--text-dim);font-weight:500;}
+  header .tag{
+    font-family:var(--mono);
+    font-size:10.5px;
+    color:var(--accent);
+    background:var(--accent-dim);
+    padding:2px 7px;
+    border-radius:3px;
+    letter-spacing:0.03em;
+  }
+  header .spacer{flex:1;}
+  header .meta{font-size:11px;color:var(--text-faint);font-family:var(--mono);}
+
+  /* ---- main layout ---- */
+  .layout{flex:1;display:flex;min-height:0;}
+  .col{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);}
+  .col:last-child{border-right:none;}
+
+  .col-head{
+    padding:9px 16px;
+    font-size:11px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--text-dim);
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-shrink:0;
+    background:var(--panel-2);
+  }
+  .col-head .n{
+    font-family:var(--mono);
+    font-size:10px;
+    color:var(--text-faint);
+    border:1px solid var(--line);
+    border-radius:3px;
+    width:16px;height:16px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .col-head .fill{flex:1;}
+  .col-head button{
+    background:none;border:1px solid var(--line);color:var(--text-dim);
+    font-family:var(--ui);font-size:10.5px;font-weight:600;
+    padding:3px 8px;border-radius:4px;cursor:pointer;
+    letter-spacing:0.01em;
+  }
+  .col-head button:hover{border-color:var(--accent);color:var(--accent);}
+
+  .editor-wrap{flex:1;position:relative;min-height:0;display:flex;}
+  textarea{
+    flex:1;
+    resize:none;
+    border:none;
+    outline:none;
+    background:var(--panel);
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:12.5px;
+    line-height:1.6;
+    padding:14px 16px;
+    tab-size:2;
+    white-space:pre;
+  }
+  textarea::placeholder{color:var(--text-faint);}
+
+  /* gutter for payload pane */
+  .gutter{
+    width:34px;
+    background:var(--panel-2);
+    border-right:1px solid var(--line-soft);
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--text-faint);
+    line-height:1.6;
+    padding:14px 0 14px 0;
+    text-align:right;
+    overflow:hidden;
+    flex-shrink:0;
+    user-select:none;
+  }
+  .gutter div{padding-right:8px;height:20.4px;position:relative;}
+  .gutter div.err{color:var(--error);font-weight:600;}
+  .gutter div.err::after{
+    content:'';
+    position:absolute;
+    right:1px;top:50%;
+    width:5px;height:5px;
+    border-radius:50%;
+    background:var(--error);
+    transform:translateY(-50%);
+    box-shadow:0 0 0 3px rgba(240,88,75,0.18);
+  }
+
+  .payload-editor{position:relative;flex:1;display:flex;}
+
+  /* ---- run bar ---- */
+  .runbar{
+    flex-shrink:0;
+    border-top:1px solid var(--line);
+    padding:12px 16px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:var(--panel-2);
+  }
+  .run-btn{
+    background:var(--accent);
+    color:#0B0E14;
+    border:none;
+    font-family:var(--ui);
+    font-weight:700;
+    font-size:12.5px;
+    padding:8px 16px;
+    border-radius:5px;
+    cursor:pointer;
+    letter-spacing:0.01em;
+    display:flex;align-items:center;gap:7px;
+  }
+  .run-btn:hover{background:#7099FF;}
+  .run-btn:active{transform:translateY(1px);}
+  .runbar .status{font-family:var(--mono);font-size:11.5px;color:var(--text-dim);}
+  .runbar .status.ok{color:var(--pass);}
+  .runbar .status.bad{color:var(--error);}
+
+  /* ---- results column ---- */
+  .results-col{flex:1.15;display:flex;flex-direction:column;min-width:0;}
+  .results-body{flex:1;overflow-y:auto;background:var(--panel);}
+
+  .empty-state{
+    padding:40px 24px;
+    color:var(--text-faint);
+    font-size:12.5px;
+    line-height:1.7;
+    text-align:left;
+  }
+  .empty-state .big{color:var(--text-dim);font-size:13px;font-weight:600;margin-bottom:6px;}
+
+  .summary-banner{
+    margin:14px 16px 0 16px;
+    padding:12px 14px;
+    border-radius:6px;
+    font-size:12.5px;
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    font-family:var(--ui);
+  }
+  .summary-banner.pass{background:var(--pass-bg);border:1px solid #1E5C44;color:#9FEDC8;}
+  .summary-banner.fail{background:var(--error-bg);border:1px solid var(--error-dim);color:#FAC4BE;}
+  .summary-banner .icon{font-family:var(--mono);font-weight:700;font-size:13px;flex-shrink:0;margin-top:1px;}
+  .summary-banner b{font-weight:700;}
+
+  .violation-list{padding:14px 16px;display:flex;flex-direction:column;gap:8px;}
+  .violation{
+    border:1px solid var(--error-dim);
+    background:var(--error-bg);
+    border-radius:6px;
+    padding:10px 12px;
+  }
+  .violation .vhead{
+    display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap;
+  }
+  .violation .vpath{
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:700;
+    color:#FAC4BE;
+    background:rgba(240,88,75,0.12);
+    padding:1px 7px;
+    border-radius:3px;
+  }
+  .violation .vcode{
+    font-family:var(--mono);
+    font-size:9.5px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:var(--text-dim);
+    border:1px solid var(--line);
+    padding:1px 6px;
+    border-radius:10px;
+  }
+  .violation .vmsg{font-size:12.5px;color:var(--text);line-height:1.55;}
+  .violation .vmsg code{
+    font-family:var(--mono);
+    background:rgba(255,255,255,0.06);
+    padding:1px 4px;
+    border-radius:3px;
+    font-size:11.5px;
+    color:#D8DEEA;
+  }
+
+  .warn-note{
+    margin:0 16px 14px 16px;
+    padding:10px 12px;
+    border-radius:6px;
+    background:rgba(224,162,61,0.08);
+    border:1px solid rgba(224,162,61,0.3);
+    font-size:11.5px;
+    color:#E8C588;
+    line-height:1.5;
+  }
+
+  /* json error (parse failure) */
+  .parse-error{
+    margin:14px 16px;
+    padding:12px 14px;
+    border-radius:6px;
+    background:var(--error-bg);
+    border:1px solid var(--error-dim);
+    font-family:var(--mono);
+    font-size:12px;
+    color:#FAC4BE;
+    line-height:1.6;
+  }
+
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-track{background:var(--panel);}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;}
+  ::-webkit-scrollbar-thumb:hover{background:#2A3247;}
+
+  @media (max-width:900px){
+    .layout{flex-direction:column;overflow-y:auto;}
+    .col{border-right:none;border-bottom:1px solid var(--line);}
+    textarea{font-size:12px;}
+  }
+
+  button:focus-visible, .run-btn:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Parse JSON <span class="dim">/ Schema Checker</span></h1>
+  <span class="tag">Power Automate</span>
+  <div class="spacer"></div>
+  <span class="meta">runs entirely in your browser — nothing leaves this page</span>
+</header>
+
+<div class="layout">
+
+  <div class="col" id="schema-col">
+    <div class="col-head">
+      <span class="n">1</span> Parse JSON Schema
+      <div class="fill"></div>
+      <button id="loadSampleSchema">Load example</button>
+      <button id="formatSchema">Format</button>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="schemaInput" spellcheck="false" placeholder='Paste the schema from "Parse JSON" → Use sample payload to generate schema, or your own schema, e.g.
+
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer" },
+    "name": { "type": "string" }
+  },
+  "required": ["id", "name"]
+}'></textarea>
+    </div>
+  </div>
+
+  <div class="col" id="payload-col">
+    <div class="col-head">
+      <span class="n">2</span> JSON Payload
+      <div class="fill"></div>
+      <button id="loadSamplePayload">Load example</button>
+      <button id="formatPayload">Format</button>
+    </div>
+    <div class="payload-editor">
+      <div class="gutter" id="gutter"><div>1</div></div>
+      <textarea id="payloadInput" spellcheck="false" placeholder='Paste the JSON payload you want to test against the schema, e.g.
+
+{
+  "id": "123",
+  "name": "Widget"
+}'></textarea>
+    </div>
+  </div>
+
+  <div class="col results-col" id="results-col">
+    <div class="col-head">
+      <span class="n">3</span> Validation Result
+    </div>
+    <div class="results-body" id="resultsBody">
+      <div class="empty-state">
+        <div class="big">Nothing checked yet</div>
+        Paste a schema on the left and a payload in the middle, then run the check.<br><br>
+        This reproduces how Power Automate's <code style="font-family:var(--mono);color:var(--text-dim);">Parse JSON</code> action evaluates incoming data against its schema — including its specific behavior around <code style="font-family:var(--mono);color:var(--text-dim);">required</code> fields, type coercion, and <code style="font-family:var(--mono);color:var(--text-dim);">additionalProperties</code>.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="runbar">
+  <button class="run-btn" id="runBtn">▶ Run validation</button>
+  <span class="status" id="statusLine"></span>
+</div>
+
+<script>
+(function(){
+  const schemaInput = document.getElementById('schemaInput');
+  const payloadInput = document.getElementById('payloadInput');
+  const resultsBody = document.getElementById('resultsBody');
+  const statusLine = document.getElementById('statusLine');
+  const gutter = document.getElementById('gutter');
+
+  // ---------- sample data ----------
+  const SAMPLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+      "orderId": { "type": "integer" },
+      "customerName": { "type": "string" },
+      "email": { "type": "string" },
+      "status": { "type": "string", "enum": ["pending", "shipped", "delivered", "cancelled"] },
+      "total": { "type": "number" },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "sku": { "type": "string" },
+            "quantity": { "type": "integer" }
+          },
+          "required": ["sku", "quantity"]
+        }
+      },
+      "shippingAddress": {
+        "type": "object",
+        "properties": {
+          "street": { "type": "string" },
+          "zip": { "type": "string" }
+        },
+        "required": ["street", "zip"]
+      }
+    },
+    "required": ["orderId", "customerName", "status", "items"]
+  };
+
+  const SAMPLE_PAYLOAD = {
+    "orderId": "8841",
+    "customerName": "Jordan Reyes",
+    "status": "processing",
+    "total": "129.99",
+    "items": [
+      { "sku": "WID-100", "quantity": 2 },
+      { "sku": "WID-204" }
+    ],
+    "shippingAddress": {
+      "street": "412 Birch Ave"
+    }
+  };
+
+  document.getElementById('loadSampleSchema').addEventListener('click', () => {
+    schemaInput.value = JSON.stringify(SAMPLE_SCHEMA, null, 2);
+  });
+  document.getElementById('loadSamplePayload').addEventListener('click', () => {
+    payloadInput.value = JSON.stringify(SAMPLE_PAYLOAD, null, 2);
+    syncGutter();
+  });
+  document.getElementById('formatSchema').addEventListener('click', () => {
+    try { schemaInput.value = JSON.stringify(JSON.parse(schemaInput.value), null, 2); } catch(e){}
+  });
+  document.getElementById('formatPayload').addEventListener('click', () => {
+    try { payloadInput.value = JSON.stringify(JSON.parse(payloadInput.value), null, 2); syncGutter(); } catch(e){}
+  });
+
+  // ---------- gutter line numbers ----------
+  function syncGutter(errorLines){
+    errorLines = errorLines || new Set();
+    const lines = payloadInput.value.split('\n');
+    const count = Math.max(lines.length, 1);
+    let html = '';
+    for(let i=1;i<=count;i++){
+      const isErr = errorLines.has(i);
+      html += `<div class="${isErr ? 'err' : ''}">${i}</div>`;
+    }
+    gutter.innerHTML = html;
+  }
+  payloadInput.addEventListener('input', () => syncGutter());
+  payloadInput.addEventListener('scroll', () => { gutter.scrollTop = payloadInput.scrollTop; });
+  syncGutter();
+
+  // ---------- JSON parsing with line info ----------
+  // Power Automate's schema is JSON-Schema-like (draft-4 flavored, used by NJsonSchema).
+  // We implement a focused validator covering the constructs Parse JSON actually
+  // enforces in practice: type, required, properties, additionalProperties,
+  // items, enum, minLength/maxLength, minimum/maximum, and nested combinations.
+
+  function typeOf(value){
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return 'array';
+    const t = typeof value;
+    if (t === 'number') return Number.isInteger(value) ? 'integer' : 'number';
+    return t; // string, boolean, object, undefined
+  }
+
+  // Power Automate / NJsonSchema accepts an integer where "number" is expected,
+  // and is lenient about numeric strings in some contexts, but for Parse JSON
+  // the strict behavior is: declared type must match the JSON token type.
+  // Known real-world Parse JSON quirks we encode:
+  //  - "integer" schema rejects a JSON string even if numeric ("123")
+  //  - "number" schema accepts both integer and float JSON values
+  //  - missing "required" property -> hard failure
+  //  - extra properties not in schema -> allowed UNLESS additionalProperties:false
+  //  - "enum" mismatch -> hard failure
+  //  - null violates a type unless "type" explicitly includes "null" or schema uses ["X","null"]
+
+  function typeMatches(declared, actualType, value){
+    const declaredList = Array.isArray(declared) ? declared : [declared];
+    return declaredList.some(d => {
+      if (d === 'number') return actualType === 'number' || actualType === 'integer';
+      if (d === 'integer') return actualType === 'integer';
+      if (d === 'any') return true;
+      return d === actualType;
+    });
+  }
+
+  function describeType(declared){
+    return Array.isArray(declared) ? declared.join(' | ') : declared;
+  }
+
+  function pathStr(segments){
+    if (segments.length === 0) return '$';
+    let s = '$';
+    for(const seg of segments){
+      if (typeof seg === 'number') s += `[${seg}]`;
+      else s += `.${seg}`;
+    }
+    return s;
+  }
+
+  // returns array of {path, code, message}
+  function validate(schema, data, path, violations, lineMap){
+    if (schema === undefined || schema === null) return;
+
+    // type check
+    if (schema.type !== undefined) {
+      const actualType = typeOf(data);
+      if (data === undefined) {
+        // handled by required check at parent level; skip here
+      } else if (!typeMatches(schema.type, actualType, data)) {
+        violations.push({
+          path: pathStr(path),
+          code: 'type-mismatch',
+          message: `Expected type <code>${describeType(schema.type)}</code> but payload has <code>${actualType}</code>${actualType==='string' ? ` (value: "${truncate(data)}")` : ` (value: ${truncate(JSON.stringify(data))})`}.`,
+          key: path[path.length-1]
+        });
+        return; // don't dig further into a value whose base type is already wrong
+      }
+    }
+
+    const actualType = typeOf(data);
+
+    // enum
+    if (schema.enum !== undefined && data !== undefined) {
+      const ok = schema.enum.some(v => JSON.stringify(v) === JSON.stringify(data));
+      if (!ok) {
+        violations.push({
+          path: pathStr(path),
+          code: 'enum-mismatch',
+          message: `Value <code>${truncate(JSON.stringify(data))}</code> is not one of the allowed values: <code>${schema.enum.map(v=>JSON.stringify(v)).join(', ')}</code>.`,
+          key: path[path.length-1]
+        });
+      }
+    }
+
+    // string constraints
+    if (actualType === 'string') {
+      if (schema.minLength !== undefined && data.length < schema.minLength) {
+        violations.push({ path: pathStr(path), code: 'minLength', message: `String length ${data.length} is shorter than minLength <code>${schema.minLength}</code>.`, key: path[path.length-1] });
+      }
+      if (schema.maxLength !== undefined && data.length > schema.maxLength) {
+        violations.push({ path: pathStr(path), code: 'maxLength', message: `String length ${data.length} exceeds maxLength <code>${schema.maxLength}</code>.`, key: path[path.length-1] });
+      }
+      if (schema.pattern !== undefined) {
+        try {
+          const re = new RegExp(schema.pattern);
+          if (!re.test(data)) {
+            violations.push({ path: pathStr(path), code: 'pattern', message: `Value does not match required pattern <code>${schema.pattern}</code>.`, key: path[path.length-1] });
+          }
+        } catch(e) { /* ignore bad regex in schema */ }
+      }
+    }
+
+    // numeric constraints
+    if (actualType === 'number' || actualType === 'integer') {
+      if (schema.minimum !== undefined && data < schema.minimum) {
+        violations.push({ path: pathStr(path), code: 'minimum', message: `Value ${data} is less than minimum <code>${schema.minimum}</code>.`, key: path[path.length-1] });
+      }
+      if (schema.maximum !== undefined && data > schema.maximum) {
+        violations.push({ path: pathStr(path), code: 'maximum', message: `Value ${data} is greater than maximum <code>${schema.maximum}</code>.`, key: path[path.length-1] });
+      }
+    }
+
+    // object: properties / required / additionalProperties
+    if (actualType === 'object' && schema.properties) {
+      const requiredList = schema.required || [];
+      for (const reqKey of requiredList) {
+        if (!(reqKey in data) || data[reqKey] === null || data[reqKey] === undefined) {
+          violations.push({
+            path: pathStr(path.concat(reqKey)),
+            code: 'required',
+            message: `Required property <code>${reqKey}</code> is missing from the payload.`,
+            key: reqKey,
+            missing: true
+          });
+        }
+      }
+      for (const key of Object.keys(schema.properties)) {
+        if (key in data && data[key] !== undefined && data[key] !== null) {
+          validate(schema.properties[key], data[key], path.concat(key), violations, lineMap);
+        }
+      }
+      if (schema.additionalProperties === false) {
+        for (const key of Object.keys(data)) {
+          if (!(key in schema.properties)) {
+            violations.push({
+              path: pathStr(path.concat(key)),
+              code: 'additionalProperties',
+              message: `Property <code>${key}</code> is not defined in the schema and <code>additionalProperties</code> is set to <code>false</code>.`,
+              key: key
+            });
+          }
+        }
+      }
+    }
+
+    // array: items
+    if (actualType === 'array' && schema.items) {
+      if (schema.minItems !== undefined && data.length < schema.minItems) {
+        violations.push({ path: pathStr(path), code: 'minItems', message: `Array has ${data.length} item(s), fewer than minItems <code>${schema.minItems}</code>.`, key: path[path.length-1] });
+      }
+      if (schema.maxItems !== undefined && data.length > schema.maxItems) {
+        violations.push({ path: pathStr(path), code: 'maxItems', message: `Array has ${data.length} item(s), more than maxItems <code>${schema.maxItems}</code>.`, key: path[path.length-1] });
+      }
+      if (!Array.isArray(schema.items)) {
+        data.forEach((item, idx) => {
+          validate(schema.items, item, path.concat(idx), violations, lineMap);
+        });
+      } else {
+        // tuple-style items
+        data.forEach((item, idx) => {
+          if (schema.items[idx]) validate(schema.items[idx], item, path.concat(idx), violations, lineMap);
+        });
+      }
+    }
+
+    return;
+  }
+
+  function truncate(s, n=60){
+    s = String(s);
+    return s.length > n ? s.slice(0,n) + '…' : s;
+  }
+
+  // Build a best-effort map of JSON-path -> line number by scanning the raw
+  // payload text. This is approximate (string match on key tokens) but works
+  // well for the gutter-highlight signature feature.
+  function buildLineMap(rawText){
+    const lines = rawText.split('\n');
+    const map = {}; // key name -> first line it appears on (rough heuristic)
+    lines.forEach((line, idx) => {
+      const m = line.match(/"([^"]+)"\s*:/);
+      if (m) {
+        const key = m[1];
+        if (!(key in map)) map[key] = idx + 1;
+      }
+    });
+    return map;
+  }
+
+  function render(violations, parseOk, parseErrorMsg, payloadValid, schemaValid){
+    resultsBody.innerHTML = '';
+    const lineMap = buildLineMap(payloadInput.value);
+    const errorLines = new Set();
+
+    if (!schemaValid) {
+      resultsBody.innerHTML = `<div class="parse-error"><b>Schema is not valid JSON.</b><br>${escapeHtml(parseErrorMsg)}</div>`;
+      statusLine.textContent = 'Fix the schema JSON syntax before running validation.';
+      statusLine.className = 'status bad';
+      syncGutter(errorLines);
+      return;
+    }
+
+    if (!payloadValid) {
+      resultsBody.innerHTML = `<div class="parse-error"><b>Payload is not valid JSON.</b><br>${escapeHtml(parseErrorMsg)}<br><br>Power Automate's Parse JSON action will fail immediately on malformed JSON, before schema rules are even evaluated.</div>`;
+      statusLine.textContent = 'Fix the payload JSON syntax before running validation.';
+      statusLine.className = 'status bad';
+      syncGutter(errorLines);
+      return;
+    }
+
+    if (violations.length === 0) {
+      resultsBody.innerHTML = `
+        <div class="summary-banner pass">
+          <span class="icon">✓</span>
+          <div><b>Payload satisfies the schema.</b><br>No type, required-field, or enum violations were found. Parse JSON should accept this payload as-is.</div>
+        </div>`;
+      statusLine.textContent = '0 issues found';
+      statusLine.className = 'status ok';
+      syncGutter(errorLines);
+      return;
+    }
+
+    let html = `
+      <div class="summary-banner fail">
+        <span class="icon">✕</span>
+        <div><b>${violations.length} issue${violations.length>1?'s':''} found.</b><br>Parse JSON will throw a schema validation error for this payload. Details below, ordered by where they occur in the payload.</div>
+      </div>
+      <div class="violation-list">`;
+
+    violations.forEach(v => {
+      const ln = v.key !== undefined ? lineMap[String(v.key)] : undefined;
+      if (ln) errorLines.add(ln);
+      html += `
+        <div class="violation">
+          <div class="vhead">
+            <span class="vpath">${escapeHtml(v.path)}</span>
+            <span class="vcode">${v.code}</span>
+            ${ln ? `<span class="vcode" style="border-color:var(--accent-dim);color:var(--accent);">line ${ln}</span>` : ''}
+          </div>
+          <div class="vmsg">${v.message}</div>
+        </div>`;
+    });
+    html += `</div>`;
+    html += `<div class="warn-note">Line numbers are a best-effort match on property names in the payload text and may point to a duplicate key elsewhere in the document if the same key name is reused at multiple levels.</div>`;
+
+    resultsBody.innerHTML = html;
+    statusLine.textContent = `${violations.length} issue${violations.length>1?'s':''} found`;
+    statusLine.className = 'status bad';
+    syncGutter(errorLines);
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function run(){
+    let schemaObj, payloadObj;
+    let schemaValid = true, payloadValid = true, errMsg = '';
+
+    try {
+      schemaObj = JSON.parse(schemaInput.value);
+    } catch(e) {
+      schemaValid = false;
+      errMsg = e.message;
+      render([], true, errMsg, true, false);
+      return;
+    }
+
+    try {
+      payloadObj = JSON.parse(payloadInput.value);
+    } catch(e) {
+      payloadValid = false;
+      errMsg = e.message;
+      render([], true, errMsg, false, true);
+      return;
+    }
+
+    const violations = [];
+    validate(schemaObj, payloadObj, [], violations, {});
+    render(violations, true, '', true, true);
+  }
+
+  document.getElementById('runBtn').addEventListener('click', run);
+
+  // Allow Ctrl/Cmd+Enter to run from either editor
+  [schemaInput, payloadInput].forEach(el => {
+    el.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run();
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
